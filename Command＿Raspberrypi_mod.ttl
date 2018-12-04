@@ -1,0 +1,190 @@
+;[Before]=====================================================
+; Get Host List
+ HOST_FILE='E:\Yaguchi\Documents\hostlist.txt'
+ 
+; Get Current Directory
+ Getdir CurrentDir
+ LOGSPATH = CurrentDir
+ Strconcat LOGSPATH '\'
+; Get Date
+ Getdate Str_Getdate
+ Strcopy Str_Getdate 1 4 Str_Year
+ Strcopy Str_Getdate 6 2 Str_Mon
+ Strcopy Str_Getdate 9 2 Str_Day
+ 
+; Get Time
+ Gettime Str_Gettime
+ Strcopy Str_Gettime 1 2 Str_Hour
+ Strcopy Str_Gettime 4 2 Str_Min
+ Strcopy Str_Gettime 7 2 Str_Sec
+ 
+; Read 1 line from 'HOST_LIST' To 'HOST_LIST_LINE'.
+; 'HOST_LIST' move to the next line
+ Fileopen HOST_LIST HOST_FILE 0
+ Filereadln HOST_LIST HOST_LIST_LINE
+ 
+; Connecting Roop 
+ While RESULT = 0
+    Strlen HOST_LIST_LINE
+    If RESULT = 0 Goto END
+ 
+    Strmatch HOST_LIST_LINE '^#'
+    If RESULT<>1 CALL CONNECT_PROCESS
+
+; Read 1 line from 'HOST_LIST' To 'HOST_LIST_LINE'.
+; 'HOST_LIST' move to the next line
+
+    Filereadln HOST_LIST HOST_LIST_LINE
+
+ EndWhile
+
+ callmenu 50815
+ callmenu 50445
+ 
+; Start Process
+; Select Operation mode
+goto SELECTION
+
+; [END]===========================
+:END
+ Fileclose HOST_LIST
+ Return
+ 
+; [CONNECT_PROCESS]===============
+:CONNECT_PROCESS
+ Strsplit HOST_LIST_LINE ','
+ HOST_NAME = Groupmatchstr1
+ HOST_IP   = Groupmatchstr2
+ HOST_USER = Groupmatchstr3
+ HOST_PASS = Groupmatchstr4
+ 
+; Write Log
+ FULLPATH = LOGSPATH
+ Strconcat FULLPATH Str_Year
+ Strconcat FULLPATH Str_Mon
+ Strconcat FULLPATH Str_Day
+ Strconcat FULLPATH '_'
+ Strconcat FULLPATH Str_Hour
+ Strconcat FULLPATH Str_Min
+ Strconcat FULLPATH Str_Sec
+ Strconcat FULLPATH '_'
+ 
+ Strconcat FULLPATH HOST_NAME
+ Strconcat FULLPATH '.log'
+ 
+; Remote Access Server(SSH Connect)
+ MSG       = HOST_IP
+ Strconcat MSG  ' /ssh /2 /nosecuritywarning /auth=password /user='
+ Strconcat MSG HOST_USER
+ Strconcat MSG ' /passwd='
+ Strconcat MSG HOST_PASS
+ Connect   MSG
+ 
+; Connet decision
+ If result<>2 Then
+    Strconcat  FULLPATH '.error'
+    Filecreate ERRORFILE FULLPATH
+    Fileclose  ERRORFILE
+    Closett
+    Return
+ Endif
+ 
+; Log write
+ Logopen FULLPATH 1 1
+ Logwrite '*********************************'#13#10
+ Logwrite 'Hostname:'
+ Logwrite HOST_NAME
+ Logwrite #13#10
+ Logwrite 'UserName:'
+ Logwrite HOST_USER
+ Logwrite 'Execution time :'
+ Str_Get=Str_Getdate
+ Strconcat Str_Get ' '
+ Strconcat Str_Get Str_Gettime
+ Logwrite Str_Get
+ Logwrite #13#10
+ Logwrite '********************
+ 
+; Run Program
+ pause 5
+; NTP Sync
+ sendln 'sudo ntpdate -u 192.168.11.10'
+; Wait 20sec
+ pause 20
+; Separate each window
+ unlink
+ Return
+
+; [EXPERIMENT_PROCESS]===============
+:EXPERIMENT
+
+ ; Get Time
+ Gettime Str_Gettime
+ Strcopy Str_Gettime 1 2 Str_Hour
+ Strcopy Str_Gettime 4 2 Str_Min
+ Strcopy Str_Gettime 7 2 Str_Sec
+
+ str2int Int_Hour Str_Hour
+ str2int Int_Min Str_Min 
+ str2int Int_Sec Str_Sec
+ 
+ ;Set Start Time
+ if Int_Sec < 45 then
+   Int_Start_sec = Int_Sec + 10
+   int2str Start_Sec Int_Start_Sec
+   Start_Min = Str_Min
+   Start_Hour = Str_Hour
+   
+ else
+   if Int_Min < 59 then
+     Int_Start_Min = Int_Min + 1
+     int2str Start_Min Int_Start_Min
+     Start_Sec = '00'
+     Start_Hour = Str_Hour
+   else
+     Int_Start_Hour = Int_Hour + 1
+     int2str Start_Hour Int_Start_Hour
+	 Start_Hour = Str_Hour
+     Start_Sec = '00'
+	 Start_Min = '00'
+   endif
+ endif
+ 
+ ;Making command 
+ 
+ PYCOMMAND = 'python Documents/Scripts/OpenCV_Picamera3.py '
+ Strconcat PYCOMMAND Start_Hour
+ Strconcat PYCOMMAND  ':'
+ Strconcat PYCOMMAND Start_Min
+ Strconcat PYCOMMAND  ':'
+ Strconcat PYCOMMAND Start_Sec
+
+ sendlnbroadcast PYCOMMAND
+ yesnobox 'Stop Experiment?' 'Experiment mode'
+ if result then
+   sendlnbroadcast 'a'
+   goto SELECTION
+ endif
+ 
+; [STREAMING_PROCESS]===============
+:STREAMING
+ sendlnbroadcast 'cd pistreaming'
+ sendlnbroadcast 'python3 server.py'
+
+ yesnobox 'Stop Streaming?' 'Streaming mode'
+ if result then
+; Stop process
+   sendlnbroadcast #3
+   sendlnbroadcast 'cd ..'
+   goto SELECTION
+ endif
+ 
+; [SELECTION_PROCESS]===============
+:SELECTION 
+ yesnobox 'Start an Experiment = yes Streaming mode = no' 'selection' 
+ if result then
+   goto EXPERIMENT
+ else
+   goto STREAMING
+ endif
+ 
